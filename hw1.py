@@ -15,6 +15,7 @@ import numpy as np
 import tf_util
 import gym
 import load_policy
+import pandas as pd
 
 
 their_data_path = None
@@ -57,11 +58,14 @@ def view_expert(policy, data_path):
                     print("%i/%i" % (steps, max_steps))
                 if steps >= max_steps:
                     break
+
+            steps_numbers.append(steps)
             returns.append(totalr)
 
         expert_data = {'observations': np.array(observations),
                        'actions': np.array(actions),
-                       'returns': np.array(returns)}
+                       'returns': np.array(returns),
+                       'steps': np.array(steps_numbers)}
         # print('expert_data', expert_data)
     pickle.dump(expert_data, open(their_data_path, 'wb'))
 
@@ -163,7 +167,7 @@ def train_my_model():
     simple_model(expert_data)
 
 
-def restore_model():
+def restore_model(path):
     global save_path, save_name
 
     meta_path = None
@@ -184,12 +188,20 @@ def restore_model():
         sess.run(tf.global_variables_initializer())
         all_var = tf.trainable_variables()
 
+        print("length of all_var")
+        print(len(all_var))
+        print("all_var[0]")
+        print(sess.run(all_var[0]))
+        print("all_var[1]")
+        print(sess.run(all_var[1]))
+
         env = gym.make(args.envname)
         max_steps = args.max_timesteps or env.spec.timestep_limit
 
         returns = []
         observations = []
         actions = []
+        steps_numbers = []
 
         for i in range(args.num_rollouts):
 
@@ -198,8 +210,10 @@ def restore_model():
             steps = 0
             totalr = 0
 
+            print(" %d /num_rollouts" % i)
+
             while not done:
-                action = tf_util.eval(all_var[0], feed_dict={input_data: obs[None, :]})
+                action = tf_util.eval(tf.matmul(tf.matmul(input_data, all_var[0]) + all_var[1], all_var[2]) + all_var[3], feed_dict={input_data: obs[None, :]})
 
                 print(action)
 
@@ -214,7 +228,44 @@ def restore_model():
                     print("%i/%i" % (steps, max_steps))
                 if steps >= max_steps:
                     break
+            steps_numbers.append(steps)
             returns.append(totalr)
+
+        my_data = {'observations': np.array(observations),
+                   'actions': np.array(actions),
+                   'returns': np.array(returns),
+                   'steps': np.array(steps_numbers)}
+    pickle.dump(my_data, open(path + '-mymodel.txt', 'wb'))
+
+
+def one_data_table_stats(data):
+    mean = data['returns'].mean()
+    std = data['returns'].std()
+    x = data['steps']
+    pct_full_steps = (x / x.max()).mean()
+
+    return pd.Series({
+        'mean reward': mean,
+        'std reward': std,
+        'pct full rollout': pct_full_steps
+    })
+
+
+def compare_model(envname):
+    expert = pickle.load(open(envname + '-expert.txt', 'rb'))
+    my = pickle.load(open(envname + '-mymodel.txt', 'rb'))
+
+    df = pd.DataFrame({
+        'expert': one_data_table_stats(expert),
+        'imitation': one_data_table_stats(my)
+    })
+
+    print('Analyzing experiment' + envname)
+    print(df)
+
+
+
+
 
 
 if __name__ == '__main__':
@@ -236,8 +287,9 @@ if __name__ == '__main__':
     print('loaded and built')
     their_data_path = args.envname + "-expert.txt"
 
-    #view_expert(policy_fn, their_data_path)
-    #train_my_model()
+    view_expert(policy_fn, their_data_path)
+    train_my_model()
 
-    restore_model()
+    restore_model(args.envname)
+    compare_model(args.envname)
     exit()
