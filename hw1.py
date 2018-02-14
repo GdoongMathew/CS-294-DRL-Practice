@@ -21,6 +21,8 @@ import pandas as pd
 their_data_path = None
 save_path = None
 save_name = None
+observations_shape = None
+actions_shape = None
 
 
 def view_expert(policy, data_path):
@@ -47,6 +49,7 @@ def view_expert(policy, data_path):
             steps = 0
             while not done:
                 action = policy_fn(obs[None, :])
+
                 observations.append(obs)
                 actions.append(action)
                 obs, r, done, _ = env.step(action)
@@ -62,8 +65,14 @@ def view_expert(policy, data_path):
             steps_numbers.append(steps)
             returns.append(totalr)
 
-        expert_data = {'observations': np.array(observations),
-                       'actions': np.array(actions),
+        observations = np.array(observations)
+        actions = np.array(actions)
+
+        global observations_shape, actions_shape
+        observations_shape = observations.shape[1]
+        actions_shape = actions.shape[2]
+        expert_data = {'observations': observations,
+                       'actions': actions,
                        'returns': np.array(returns),
                        'steps': np.array(steps_numbers)}
         # print('expert_data', expert_data)
@@ -89,7 +98,7 @@ def simple_model(data):
 
     # params
     learning_rate = 0.001
-    train_iter = 20
+    train_iter = 30
     batch_size = 1000  # how many datas contained in one batch
     num_batches = int(observations.shape[0] / batch_size)
     dropout_rate = 0.9
@@ -133,6 +142,8 @@ def simple_model(data):
         writer = tf.summary.FileWriter(log_path, graph=sess.graph)
 
         for train_step in range(train_iter):
+
+            print('train iteration: %d / %d' % (train_step, train_iter))
 
             avg_cost = 0
 
@@ -179,7 +190,7 @@ def restore_model(path):
         meta_folder = save_path
     tf.reset_default_graph()
 
-    input_data = tf.placeholder(tf.float32, shape=[None, 11])
+    input_data = tf.placeholder(tf.float32, shape=[None, observations_shape])
 
     with tf.Session() as sess:
         saver = tf.train.import_meta_graph(meta_path)
@@ -260,12 +271,8 @@ def compare_model(envname):
         'imitation': one_data_table_stats(my)
     })
 
-    print('Analyzing experiment' + envname)
+    print('Analyzing experiment: ' + envname)
     print(df)
-
-
-
-
 
 
 if __name__ == '__main__':
@@ -287,8 +294,8 @@ if __name__ == '__main__':
     print('loaded and built')
     their_data_path = args.envname + "-expert.txt"
 
-    view_expert(policy_fn, their_data_path)
-    train_my_model()
+    #view_expert(policy_fn, their_data_path)
+    #train_my_model()
 
     restore_model(args.envname)
     compare_model(args.envname)
